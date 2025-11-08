@@ -3,17 +3,17 @@
 package main
 
 import (
-	"crypto/hmac"        // For HMAC-SHA256 signature verification (constant-time comparison)
-	"crypto/rand"        // For generating cryptographically secure random tokens
-	"crypto/sha256"      // For SHA-256 hashing of refresh tokens
-	"encoding/base64"    // For base64url encoding (JWT standard)
-	"encoding/json"      // For JSON marshaling/unmarshaling
-	"errors"             // For creating error messages
-	"fmt"                // For string formatting
-	"log"                // For logging server errors
-	"net/http"           // For HTTP server functionality
-	"strings"            // For string manipulation (splitting JWTs, trimming)
-	"time"               // For token expiration timestamps
+	"crypto/hmac"     // For HMAC-SHA256 signature verification (constant-time comparison)
+	"crypto/rand"     // For generating cryptographically secure random tokens
+	"crypto/sha256"   // For SHA-256 hashing of refresh tokens
+	"encoding/base64" // For base64url encoding (JWT standard)
+	"encoding/json"   // For JSON marshaling/unmarshaling
+	"errors"          // For creating error messages
+	"fmt"             // For string formatting
+	"log"             // For logging server errors
+	"net/http"        // For HTTP server functionality
+	"strings"         // For string manipulation (splitting JWTs, trimming)
+	"time"            // For token expiration timestamps
 
 	"golang.org/x/crypto/bcrypt" // For secure password hashing (industry standard)
 )
@@ -38,13 +38,13 @@ Config: Application-wide authentication configuration.
 These values control token lifetimes, JWT claims, and cookie settings.
 */
 var (
-	jwtIssuer    = "auth-from-scratch"                                                   // JWT "iss" claim - identifies who issued the token
-	jwtAudience  = "web-client"                                                          // JWT "aud" claim - identifies intended recipient
-	accessTTL    = 15 * time.Minute                                                      // Access token lifetime (short-lived for security)
-	refreshTTL   = 7 * time.Hour                                                         // Refresh token lifetime (longer, stored in HttpOnly cookie)
+	jwtIssuer    = "auth-from-scratch"                                                        // JWT "iss" claim - identifies who issued the token
+	jwtAudience  = "web-client"                                                               // JWT "aud" claim - identifies intended recipient
+	accessTTL    = 15 * time.Minute                                                           // Access token lifetime (short-lived for security)
+	refreshTTL   = 7 * time.Hour                                                              // Refresh token lifetime (longer, stored in HttpOnly cookie)
 	jwtSecret    = []byte("ff82f57da0f9df8f60a10a3fb29aca146bfedb88b967fd08c69ccb23c6ff44dc") // Secret key for HMAC-SHA256 signing (NEVER commit real secrets!)
-	cookieName   = "rt"                                                                  // Name of the refresh token cookie
-	cookieDomain = "localhost"                                                           // Cookie domain (set to your domain in production)
+	cookieName   = "rt"                                                                       // Name of the refresh token cookie
+	cookieDomain = "localhost"                                                                // Cookie domain (set to your domain in production)
 )
 
 // withCORS is a middleware that enables Cross-Origin Resource Sharing (CORS).
@@ -57,11 +57,11 @@ func withCORS(next http.Handler) http.Handler {
 		origin := r.Header.Get("Origin")
 
 		// Only allow requests from these specific origins (Vite and Create React App default ports)
-		if origin == "http://localhost:5173" || origin == "http://localhost:3000" {
-			w.Header().Set("Access-Control-Allow-Origin", origin)       // Echo back the origin (not "*" because we need credentials)
-			w.Header().Set("Vary", "Origin")                            // Tell caches that response varies by Origin header
-			w.Header().Set("Access-Control-Allow-Credentials", "true")  // Allow cookies to be sent cross-origin
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization") // Allow these headers
+		if origin == "http://localhost:5173" || origin == "http://localhost:3000" || origin == "http://localhost:5500" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)                                    // Echo back the origin (not "*" because we need credentials)
+			w.Header().Set("Vary", "Origin")                                                         // Tell caches that response varies by Origin header
+			w.Header().Set("Access-Control-Allow-Credentials", "true")                               // Allow cookies to be sent cross-origin
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")            // Allow these headers
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE, PATCH") // Allow these HTTP methods
 		}
 
@@ -162,7 +162,7 @@ func parseAndVerifyJWT(token string, secret []byte) (JWTClaims, error) {
 	}
 
 	// Step 2: Verify the signature (CRITICAL SECURITY CHECK)
-	unsigned := parts[0] + "." + parts[1] // The part that was signed
+	unsigned := parts[0] + "." + parts[1]  // The part that was signed
 	sigB, err := base64UrlDecode(parts[2]) // The signature we received
 
 	if err != nil {
@@ -209,8 +209,8 @@ These utility functions simplify common operations throughout the application.
 // The 'v any' parameter can be any type that can be marshaled to JSON.
 func jsonResp(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json") // Tell client we're sending JSON
-	w.WriteHeader(status)                               // Set HTTP status code
-	_ = json.NewEncoder(w).Encode(v)                    // Encode and send the response
+	w.WriteHeader(status)                              // Set HTTP status code
+	_ = json.NewEncoder(w).Encode(v)                   // Encode and send the response
 }
 
 // badReq sends a 400 Bad Request response with an error message.
@@ -257,8 +257,8 @@ func newRefreshToken() ([]byte, string) {
 // This is used to compare incoming tokens with stored hashes.
 func hashRefresh(rawBase64 string) []byte {
 	raw, _ := base64.RawURLEncoding.DecodeString(rawBase64) // Decode from base64
-	sum := sha256.Sum256(raw)                                // Hash it
-	return sum[:]                                            // Convert array to slice
+	sum := sha256.Sum256(raw)                               // Hash it
+	return sum[:]                                           // Convert array to slice
 }
 
 /*
@@ -375,15 +375,15 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	// Step 5: Issue Refresh Token
 	// Refresh tokens are long-lived and stored in HttpOnly cookies
 	rtHash, rtRaw := newRefreshToken()
-	u.RefreshTokenHash = rtHash               // Store hash in "database"
-	u.RefreshTokenExp = now.Add(refreshTTL)   // Set expiration (7 hours)
+	u.RefreshTokenHash = rtHash             // Store hash in "database"
+	u.RefreshTokenExp = now.Add(refreshTTL) // Set expiration (7 hours)
 
 	setRefreshCookie(w, rtRaw, u.RefreshTokenExp) // Send raw token to client
 
 	// Step 6: Send response
 	jsonResp(w, http.StatusOK, map[string]any{
-		"accessToken": access,                       // Client stores this and sends it in Authorization header
-		"expiredIn":   int(accessTTL.Seconds()),    // So client knows when to refresh (900 seconds = 15 min)
+		"accessToken": access,                                          // Client stores this and sends it in Authorization header
+		"expiredIn":   int(accessTTL.Seconds()),                        // So client knows when to refresh (900 seconds = 15 min)
 		"user":        map[string]string{"id": u.ID, "email": u.Email}, // User info for frontend
 	})
 
@@ -397,14 +397,14 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 func setRefreshCookie(w http.ResponseWriter, rawBase64 string, exp time.Time) {
 
 	c := &http.Cookie{
-		Name:     cookieName,              // "rt" - the cookie name
-		Value:    rawBase64,               // The base64-encoded refresh token
-		Path:     "/",                     // Cookie is valid for all paths
-		Expires:  exp,                     // When the cookie expires (7 hours)
-		HttpOnly: true,                    // CRITICAL: Prevents JavaScript access (XSS protection)
-		Secure:   false,                   // Set to true in production (HTTPS only)
-		SameSite: http.SameSiteLaxMode,   // CSRF protection (blocks cross-site requests except GET)
-		Domain:   cookieDomain,            // Set to your actual domain in production
+		Name:     cookieName,           // "rt" - the cookie name
+		Value:    rawBase64,            // The base64-encoded refresh token
+		Path:     "/",                  // Cookie is valid for all paths
+		Expires:  exp,                  // When the cookie expires (7 hours)
+		HttpOnly: true,                 // CRITICAL: Prevents JavaScript access (XSS protection)
+		Secure:   false,                // Set to true in production (HTTPS only)
+		SameSite: http.SameSiteLaxMode, // CSRF protection (blocks cross-site requests except GET)
+		Domain:   cookieDomain,         // Set to your actual domain in production
 	}
 
 	http.SetCookie(w, c)
@@ -417,9 +417,9 @@ func clearRefreshCookie(w http.ResponseWriter) {
 
 	c := &http.Cookie{
 		Name:     cookieName,
-		Value:    "",                 // Empty value
+		Value:    "", // Empty value
 		Path:     "/",
-		Expires:  time.Unix(0, 0),   // Set to past date to delete
+		Expires:  time.Unix(0, 0), // Set to past date to delete
 		HttpOnly: true,
 		Secure:   false,
 		SameSite: http.SameSiteLaxMode,
@@ -478,9 +478,9 @@ func handleRefresh(w http.ResponseWriter, r *http.Request) {
 	// This is a security best practice - limits the impact if a token is stolen
 	newHash, newRaw := newRefreshToken()
 
-	u.RefreshTokenHash = newHash                       // Update stored hash
-	u.RefreshTokenExp = time.Now().Add(refreshTTL)    // Reset expiration
-	setRefreshCookie(w, newRaw, u.RefreshTokenExp)    // Send new token to client
+	u.RefreshTokenHash = newHash                   // Update stored hash
+	u.RefreshTokenExp = time.Now().Add(refreshTTL) // Reset expiration
+	setRefreshCookie(w, newRaw, u.RefreshTokenExp) // Send new token to client
 
 	// Step 6: Issue new access token
 	now := time.Now()
@@ -524,7 +524,7 @@ func handleLogout(w http.ResponseWriter, r *http.Request) {
 		// Find and clear the refresh token for this user
 		for _, u := range usersById {
 			if u.RefreshTokenHash != nil && hmac.Equal(u.RefreshTokenHash, rtHash) {
-				u.RefreshTokenHash = nil    // Delete the token hash
+				u.RefreshTokenHash = nil        // Delete the token hash
 				u.RefreshTokenExp = time.Time{} // Reset expiration to zero value
 				break
 			}
