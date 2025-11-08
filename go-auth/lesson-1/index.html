@@ -1,0 +1,198 @@
+<!doctype html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <title>Auth From Scratch</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/2.1.4/toastr.min.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/2.1.4/toastr.min.js"></script>
+</head>
+
+<body class="bg-gray-50 min-h-screen py-8">
+    <div class="max-w-3xl mx-auto px-4">
+        <h1 class="text-4xl font-bold text-gray-900 mb-8 text-center">Auth — Plain JS</h1>
+
+        <section class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 class="text-2xl font-semibold text-gray-800 mb-4">Signup</h2>
+            <form id="signup-form" class="space-y-3">
+                <input name="email" placeholder="email" required
+                    class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                <input name="password" type="password" placeholder="password" required
+                    class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                <button
+                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md transition duration-200">
+                    Sign up
+                </button>
+            </form>
+        </section>
+
+        <section class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 class="text-2xl font-semibold text-gray-800 mb-4">Login</h2>
+            <form id="login-form" class="space-y-3">
+                <input name="email" placeholder="email" required
+                    class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                <input name="password" type="password" placeholder="password" required
+                    class="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                <button
+                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md transition duration-200">
+                    Login
+                </button>
+            </form>
+        </section>
+
+        <section class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 class="text-2xl font-semibold text-gray-800 mb-4">Me (protected)</h2>
+            <button id="btn-me"
+                class="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-md transition duration-200">
+                Fetch /me
+            </button>
+        </section>
+
+        <section class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 class="text-2xl font-semibold text-gray-800 mb-4">Logout</h2>
+            <button id="btn-logout"
+                class="w-full bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-md transition duration-200">
+                Logout
+            </button>
+        </section>
+    </div>
+
+    <script>
+        const API_BASE = "http://localhost:8080";
+        let accessToken = null;
+
+        const setAccessToken = (value) => {
+            accessToken = value
+            console.log({ accessToken, value })
+        }
+
+        // Configure toastr
+        toastr.options = {
+            "closeButton": true,
+            "progressBar": true,
+            "positionClass": "toast-top-right",
+            "timeOut": "3000"
+        };
+
+        async function api(path, { method = "GET", body } = {}) {
+            const headers = { "Content-Type": "application/json" };
+
+            if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+
+            const res = await fetch(API_BASE + path, {
+                method,
+                headers,
+                credentials: "include", // send cookies (refresh token)
+                body: body ? JSON.stringify(body) : undefined,
+            });
+
+            // Auto-refresh on 401 once
+            if (res.status === 401 && accessToken) {
+                const ok = await tryRefresh();
+                if (ok) {
+                    // retry original request once
+                    console.log(accessToken);
+
+                    const retry = await fetch(API_BASE + path, {
+                        method,
+                        headers: { ...headers, Authorization: `Bearer ${accessToken}` },
+                        credentials: "include",
+                        body: body ? JSON.stringify(body) : undefined,
+                    });
+
+                    return retry;
+                }
+            }
+
+            return res;
+        }
+
+        async function tryRefresh() {
+            const res = await fetch(`${API_BASE ?? ''}/refresh`, {
+                method: "POST",
+                credentials: "include",
+            });
+            if (!res.ok) {
+                accessToken = null;
+                return false;
+            }
+            const data = await res.json();
+            setAccessToken(data.accessToken);
+
+            return true;
+
+        }
+
+        document.getElementById("signup-form").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const f = e.target;
+            const res = await api("/signup", {
+                method: "POST",
+                body: { email: f.email.value, password: f.password.value }
+            });
+            const text = await res.text();
+            if (res.ok) {
+                toastr.success(text);
+                f.reset();
+
+            } else {
+                toastr.error(text);
+
+            }
+        });
+
+        document.getElementById("login-form").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const f = e.target;
+            const res = await api("/login", {
+                method: "POST",
+                body: { email: f.email.value, password: f.password.value }
+            });
+            const text = await res.text();
+            if (res.ok) {
+                try {
+                    const data = JSON.parse(text);
+                    setAccessToken(data.accessToken); // store in memory
+                    toastr.success("Login successful!");
+                    f.reset();
+                } catch {
+                    toastr.success(text);
+                }
+            } else {
+                toastr.error(text);
+            }
+        });
+
+        document.getElementById("btn-me").addEventListener("click", async () => {
+            const res = await api("/me");
+
+            const text = await res.text();
+            if (res.ok) {
+                try {
+                    const data = JSON.parse(text);
+                    toastr.info(`User: ${data.email || text}`);
+                } catch {
+                    toastr.info(text);
+                }
+            } else {
+                toastr.error(text);
+            }
+        });
+
+        document.getElementById("btn-logout").addEventListener("click", async () => {
+            const res = await api("/logout", { method: "POST" });
+            accessToken = null;
+            const text = await res.text();
+            if (res.ok) {
+                toastr.success(text);
+            } else {
+                toastr.error(text);
+            }
+        });
+    </script>
+</body>
+
+</html>
